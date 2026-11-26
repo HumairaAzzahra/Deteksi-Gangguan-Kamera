@@ -1,4 +1,5 @@
 import cv2
+import time
 from ultralytics import YOLO
 
 
@@ -15,18 +16,18 @@ def deteksi_gelap(frame):
 
 
 def main():
-    # Memuat model YOLO pretrained
     model = YOLO("yolov8n.pt")
-
-    # Membuka webcam
     kamera = cv2.VideoCapture(0)
 
     if not kamera.isOpened():
         print("Kamera tidak dapat dibuka.")
         return
 
+    # Menyimpan waktu pertama kali setiap ID terdeteksi
+    data_tracking = {}
+
     print("Kamera berhasil terhubung.")
-    print("Deteksi manusia dan tracking dimulai.")
+    print("Deteksi manusia dan pencatatan durasi dimulai.")
     print("Tekan Q untuk keluar.")
 
     while True:
@@ -36,7 +37,6 @@ def main():
             print("Gagal membaca gambar dari kamera.")
             break
 
-        # Deteksi manusia dan tracking menggunakan ByteTrack
         hasil = model.track(
             frame,
             persist=True,
@@ -45,13 +45,43 @@ def main():
             verbose=False
         )
 
-        # Menampilkan hasil deteksi dan ID tracking
         frame_deteksi = hasil[0].plot()
+        waktu_sekarang = time.time()
+
+        # Mengambil ID objek yang terdeteksi
+        boxes = hasil[0].boxes
+
+        if boxes is not None and boxes.id is not None:
+            id_objek = boxes.id.int().cpu().tolist()
+
+            for id_person in id_objek:
+                # Mencatat waktu pertama ID muncul
+                if id_person not in data_tracking:
+                    data_tracking[id_person] = waktu_sekarang
+
+                # Menghitung durasi sejak pertama terdeteksi
+                durasi = waktu_sekarang - data_tracking[id_person]
+
+                # Mencari posisi bounding box
+                for box, id_box in zip(boxes, id_objek):
+                    if id_box == id_person:
+                        x1, y1, x2, y2 = box.xyxy[0].int().cpu().tolist()
+
+                        # Menampilkan durasi pada bounding box
+                        cv2.putText(
+                            frame_deteksi,
+                            f"Durasi: {durasi:.1f}s",
+                            (x1, max(y1 - 10, 20)),
+                            cv2.FONT_HERSHEY_SIMPLEX,
+                            0.6,
+                            (0, 255, 255),
+                            2
+                        )
+                        break
 
         # Mendeteksi kecerahan
         brightness, status_gelap = deteksi_gelap(frame)
 
-        # Menampilkan informasi kecerahan
         cv2.putText(
             frame_deteksi,
             f"Kecerahan: {brightness:.2f} ({status_gelap})",
@@ -62,7 +92,6 @@ def main():
             2
         )
 
-        # Menampilkan hasil
         cv2.imshow("Deteksi Aktivitas Area Kampus", frame_deteksi)
 
         if cv2.waitKey(1) & 0xFF == ord("q"):
